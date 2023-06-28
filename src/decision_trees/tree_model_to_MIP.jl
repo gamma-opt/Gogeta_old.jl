@@ -1,22 +1,29 @@
-function trees_to_relaxed_MIP(tree_model, tree_depth; objective, constraints)
+function tree_model_to_MIP(tree_model; create_initial, min_objective, gurobi_env)
     
     creation_time = @elapsed begin
-    "Data extraction from tree model"
- 
-    n_trees, n_feats, n_leaves, leaves, n_splits, splits, ordered_splits = extract_tree_model_info(tree_model, tree_depth)
+
+    n_trees = tree_model.n_trees
+    n_feats = tree_model.n_feats
+    n_leaves = tree_model.n_leaves
+    leaves = tree_model.leaves
+    splits = tree_model.splits
+    splits_ordered = tree_model.splits_ordered
+    n_splits = tree_model.n_splits
+    predictions = tree_model.predictions
+    split_nodes = tree_model.split_nodes
     
     # set up dictionary for leaves when finding child nodes
     leaf_dict = Array{Any}(undef, n_trees)
     [leaf_dict[tree] = Dict([(leaves[tree][leaf], leaf) for leaf in eachindex(leaves[tree])]) for tree in 1:n_trees]
 
     # pre-compute all children for all nodes of all trees
-    global child_leaves = Array{Any}(undef, n_trees)
+    child_leaves = Array{Any}(undef, n_trees)
     for tree in 1:n_trees
         
-        child_leaves[tree] = Array{Any}(undef, length(tree_model.trees[tree + 1].split))
+        child_leaves[tree] = Array{Any}(undef, length(split_nodes[tree]))
 
         for node in eachindex(child_leaves[tree])
-            if tree_model.trees[tree + 1].split[node] == true
+            if split_nodes[tree][node] == true
                 child_leaves[tree][node] = children(node, leaf_dict[tree], last(leaves[tree]))
             else
                 child_leaves[tree][node] = get(leaf_dict[tree], node, 0) != 0 ? [leaf_dict[tree][node]] : []
@@ -25,7 +32,7 @@ function trees_to_relaxed_MIP(tree_model, tree_depth; objective, constraints)
     end
 
     # Set up model
-    opt_model = direct_model(Gurobi.Optimizer(ENV))
+    opt_model = direct_model(Gurobi.Optimizer(gurobi_env))
     set_attribute(opt_model, "OutputFlag", 0)
     set_attribute(opt_model, "Presolve", 0)
     set_attribute(opt_model, "TimeLimit", 100.0)
@@ -41,9 +48,9 @@ function trees_to_relaxed_MIP(tree_model, tree_depth; objective, constraints)
     # Constraints (2c) and (2d)
     initial_constraints = 0
 
-    if constraints == "initial"
+    if create_initial == true
         for tree in 1:n_trees
-            for current_node in findall(s -> s==true, tree_model.trees[tree + 1].split)
+            for current_node in findall(s -> s==true, split_nodes[tree])
 
                 right_leaves = child_leaves[tree][current_node << 1 + 1]
                 left_leaves = child_leaves[tree][current_node << 1]
@@ -59,8 +66,8 @@ function trees_to_relaxed_MIP(tree_model, tree_depth; objective, constraints)
     end
     
     # Objective function (maximize / minimize forest prediction)
-    @objective(opt_model, Min, tree_model.trees[1].pred[1] + sum(tree_model.trees[tree + 1].pred[leaves[tree][leaf]] * y[tree, leaf] for tree = 1:n_trees, leaf = 1:n_leaves[tree]))
-    if objective == "max"
+    @objective(opt_model, Min, sum(predictions[tree][leaves[tree][leaf]] * y[tree, leaf] for tree = 1:n_trees, leaf = 1:n_leaves[tree]))
+    if min_objective == false
         @objective(opt_model, Max, objective_function(opt_model))
     end
     end
@@ -82,7 +89,7 @@ function trees_to_relaxed_MIP(tree_model, tree_depth; objective, constraints)
 
             current_node = 1 # start investigating from root
         
-            while tree_model.trees[tree + 1].split[current_node] == true # traverse from root until hitting a leaf
+            while split_nodes[tree][current_node] == true # traverse from root until hitting a leaf
                 
                 right_leaves = child_leaves[tree][current_node << 1 + 1]
                 left_leaves = child_leaves[tree][current_node << 1]
@@ -120,19 +127,21 @@ function trees_to_relaxed_MIP(tree_model, tree_depth; objective, constraints)
     end
 
     # Set callback for lazy split constraint generation
-    if constraints == "generate"
+    if create_initial == false
         set_attribute(opt_model, "LazyConstraints", 1)
         set_attribute(opt_model, Gurobi.CallbackFunction(), split_constraint_callback)
     end
+
     opt_time = @elapsed optimize!(opt_model)
 
     println("GENERATED CONSTRAINTS: $generated_constraints")
 
     println("\nTIME SPENT OPTIMIZING: $(round(opt_time, digits=2)) seconds\n")
 
+    # Print solution
     if termination_status(opt_model) == MOI.OPTIMAL
         println("SOLVED TO OPTIMALITY: $(objective_value(opt_model))")
-        return get_solution(n_feats, opt_model, n_splits, ordered_splits), opt_model
+        return get_solution(n_feats, opt_model, n_splits, splits_ordered), opt_model
     else
         println("SOLVE FAILED, TIME LIMIT REACHED")
         return nothing, opt_model

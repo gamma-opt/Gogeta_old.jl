@@ -5,11 +5,13 @@ using Statistics
 using Interpolations
 using JuMP
 using Gurobi
-include("trees_to_relaxed_op.jl")
+include("tree_model_to_MIP.jl")
 include("util.jl")
+include("types.jl")
 
 const ENV = Gurobi.Env()
 
+"""
 "DATA GENERATION"
 
 Random.seed!(1)
@@ -26,6 +28,7 @@ y_train = Array{Float64}(undef, length(x_train[:, 1]));
 x_test = data[split+1:end, :];
 y_test = Array{Float64}(undef, length(x_test[:, 1]));
 [y_test[i] = sqrt(sum(x_test[i, :].^2)) for i in 1:length(y_test)];
+"""
 
 "CONCRETE DATA IMPORT"
 
@@ -50,7 +53,7 @@ n_feats = 8
 
 "TREE MODEL CONFIGURATION AND TRAINING"
 
-tree_depth, forest_size = 7, 700
+tree_depth, forest_size = 6, 1000
 
 config = EvoTreeRegressor(nrounds=forest_size, max_depth=tree_depth, T=Float64, loss=:linear);
 model = fit_evotree(config; x_train, y_train);
@@ -60,8 +63,9 @@ pred_test = EvoTrees.predict(model, x_test);
 
 "OPTIMIZATION"
 
-@time x_new, m_new = trees_to_relaxed_MIP(model, tree_depth; constraints="initial", objective="max");
-@time x_alg, m_alg = trees_to_relaxed_MIP(model, tree_depth; constraints="generate", objective="max");
+universal_model = extract_evotrees_info(model);
+@time x_new, m_new = tree_model_to_MIP(universal_model; create_initial=true, min_objective=false, gurobi_env=ENV);
+@time x_alg, m_alg = tree_model_to_MIP(universal_model; create_initial=false, min_objective=false, gurobi_env=ENV);
 
 "CHECKING OF SOLUTION"
 
