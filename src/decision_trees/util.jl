@@ -1,3 +1,6 @@
+"""
+Gets the data required for constructing the corresponding MIP from an [EvoTrees](https://github.com/Evovest/EvoTrees.jl) model `evo_model`. Returns a custom datatype `TEModel` which contains the necessary information.
+"""
 function extract_evotrees_info(evo_model)
 
     n_trees = length(evo_model.trees)
@@ -51,6 +54,9 @@ function extract_evotrees_info(evo_model)
 
 end
 
+"""
+Finds the children leaves of node `id` in a binary tree.
+"""
 function children(id, leaf_dict, max)
 
     result::Vector{Int64} = []
@@ -72,6 +78,9 @@ function children(id, leaf_dict, max)
 
 end
 
+"""
+Gets human-readable array `solution` where upper and lower bounds for each feature are given.
+"""
 function get_solution(n_feats, model, n_splits, splits_ordered)
 
     smallest_splitpoint = Array{Int64}(undef, n_feats)

@@ -1,4 +1,14 @@
-function tree_model_to_MIP(tree_model; create_initial, min_objective, gurobi_env)
+"""
+Creates a JuMP model `opt_model` and optimizes it when given a `tree_model` in the universal data type `TEModel`. Returns `opt_model`, and an array given by `get_solution` or nothing in the case of a failed solve.
+
+# Optional arguments
+* `create_initial` - controls whether split constraint algorithm or initial generation is used
+* `objective` - `MIN_SENSE` or default `MAX_SENSE`
+* `gurobi_env` - environment for Gurobi solver
+* `show_output` - controls whether output of Gurobi is shown
+* `timelimit` - time after which Gurobi solver terminates
+"""
+function tree_model_to_MIP(tree_model; create_initial=false, objective=MAX_SENSE, gurobi_env=Gurob.Env(), show_output=false, timelimit=100)
     
     creation_time = @elapsed begin
 
@@ -33,13 +43,12 @@ function tree_model_to_MIP(tree_model; create_initial, min_objective, gurobi_env
 
     # Set up model
     opt_model = direct_model(Gurobi.Optimizer(gurobi_env))
-    set_attribute(opt_model, "OutputFlag", 0)
-    set_attribute(opt_model, "Presolve", 0)
-    set_attribute(opt_model, "TimeLimit", 100.0)
+    show_output == false && set_attribute(opt_model, "OutputFlag", 0)
+    set_attribute(opt_model, "TimeLimit", timelimit)
 
     # Variable definitions as well as constraints (2g) and (2h)
     @variable(opt_model, x[feat = 1:n_feats, 1:n_splits[feat]], Bin) # indicator variable x_ij for feature i <= j:th split point (2g)
-    @variable(opt_model, y[tree = 1:n_trees, 1:n_leaves[tree]] >= 0) # indicator variable y_tl for observation falling on leaf l of tree (2h)
+    @variable(opt_model, y[tree = 1:n_trees, 1:n_leaves[tree]] >= 0) # indicator variable y_tl for observation falling on leaf l of tree t (2h)
 
     # Constraints (2f) and (2b) (constraint (2e) concerns only categorical variables)
     @constraint(opt_model, [i = 1:n_feats, j = 1:(n_splits[i]-1)], x[i,j] <= x[i, j+1]) # constraints regarding order of split points (2f)
@@ -66,13 +75,11 @@ function tree_model_to_MIP(tree_model; create_initial, min_objective, gurobi_env
     end
     
     # Objective function (maximize / minimize forest prediction)
-    @objective(opt_model, Min, sum(predictions[tree][leaves[tree][leaf]] * y[tree, leaf] for tree = 1:n_trees, leaf = 1:n_leaves[tree]))
-    if min_objective == false
-        @objective(opt_model, Max, objective_function(opt_model))
+    @objective(opt_model, objective, sum(predictions[tree][leaves[tree][leaf]] * y[tree, leaf] for tree = 1:n_trees, leaf = 1:n_leaves[tree]))
+
     end
-    end
-    println("\nTIME SPENT CREATING MODEL: $(round(creation_time, digits=2)) seconds")
-    println("\nINITIAL CONSTRAINTS: $initial_constraints")
+    println("TIME SPENT CREATING MODEL: $(round(creation_time, digits=2)) seconds")
+    create_initial && println("\nINITIAL CONSTRAINTS: $initial_constraints")
 
     # Use lazy constraints to generate only needed split constraints
     generated_constraints = 0
@@ -134,7 +141,7 @@ function tree_model_to_MIP(tree_model; create_initial, min_objective, gurobi_env
 
     opt_time = @elapsed optimize!(opt_model)
 
-    println("GENERATED CONSTRAINTS: $generated_constraints")
+    !create_initial && println("\nGENERATED CONSTRAINTS: $generated_constraints")
 
     println("\nTIME SPENT OPTIMIZING: $(round(opt_time, digits=2)) seconds\n")
 
@@ -142,9 +149,10 @@ function tree_model_to_MIP(tree_model; create_initial, min_objective, gurobi_env
     if termination_status(opt_model) == MOI.OPTIMAL
         println("SOLVED TO OPTIMALITY: $(objective_value(opt_model))")
         return get_solution(n_feats, opt_model, n_splits, splits_ordered), opt_model
-    else
+    elseif termination_status(opt_model) == MOI.TIME_LIMIT
         println("SOLVE FAILED, TIME LIMIT REACHED")
-        return nothing, opt_model
+    else
+        println("SOLVE FAILED")
     end
-
+    return nothing, opt_model
 end
