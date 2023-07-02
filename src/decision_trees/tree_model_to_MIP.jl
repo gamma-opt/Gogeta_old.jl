@@ -8,7 +8,7 @@ Creates a JuMP model `opt_model` and optimizes it when given a `tree_model` in t
 * `show_output` - controls whether output of Gurobi is shown
 * `timelimit` - time after which Gurobi solver terminates
 """
-function tree_model_to_MIP(tree_model; create_initial=false, objective=MAX_SENSE, gurobi_env=Gurob.Env(), show_output=false, timelimit=100)
+function tree_model_to_MIP(tree_model; create_initial=false, objective=MAX_SENSE, gurobi_env=Gurobi.Env(), show_output=false, timelimit=100)
     
     creation_time = @elapsed begin
 
