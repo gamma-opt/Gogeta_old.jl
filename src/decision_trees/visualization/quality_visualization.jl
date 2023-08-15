@@ -4,17 +4,20 @@ using LaTeXStrings
 datasets = ["concrete", "OX2", "3A4"];
 stores = Dict([(3, 1), (5, 2), (7, 3), (9, 4), (12, 5)]);
 
+pl.plot()
+
 for dataset in datasets
 
-filepath = string(@__DIR__)*"/test_results/"*dataset*"_test_results.txt";
+parent_directory = "/Users/eetureijonen/Desktop/THESIS/ML_as_MO/src/decision_trees/";
+filepath = parent_directory*"/test_results/"*dataset*"_test_results.txt";
 
 elements = dataset == "3A4" ? 4 : 5;
+depths = dataset == "3A4" ? [3, 5, 7, 9] : [3, 5, 7, 9, 12];
 
 r2_test_values = Array{Array}(undef, elements);
 [r2_test_values[depth] = [] for depth in 1:elements];
 
-#r2_train_values = Array{Array}(undef, 5);
-#[r2_train_values[depth] = [] for depth in 1:5];
+train_times = [];
 
 trees = [10, 50, 100, 200, 350, 500, 750, 1000];
 
@@ -35,14 +38,15 @@ for line in eachline(filepath)
         depth = parse(Int, chop(split(line, " ")[6]));
         train_time = parse(Float64, chop(split(line, " ")[9]));
 
+        push!(train_times, train_time)
     end
 
 end
 
 display(
-pl.plot(    trees, 
+pl.plot(    trees[2:end], 
             palette=:rainbow,
-            r2_test_values,
+            [subarray[2:end] for subarray in r2_test_values],
             markershape=:xcross,
             ylabel=L"R^{2}"*" for test data",
             xlabel="Number of trees",
@@ -50,5 +54,22 @@ pl.plot(    trees,
             title="Model quality for "*dataset*" dataset "
         )
 )
+"""
+display(
+pl.plot!(   depths, 
+            palette=:rainbow,
+            train_times,
+            yaxis=:log,
+            legend=:bottomright,
+            yticks=([0.1, 1, 10, 100, 1000, 10000], string.([0.1, 1, 10, 100, 1000, 10000])),
+            xticks=([3, 5, 7, 9, 12], string.([3, 5, 7, 9, 12])),
+            markershape=:xcross,
+            ylabel="Training time",
+            xlabel="Depth",
+            label=dataset,
+            title="Model training times"
+        )
+)
+"""
 
 end
