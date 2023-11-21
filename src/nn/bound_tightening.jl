@@ -15,14 +15,15 @@ Using these bounds with the create_JuMP_model function reduces solution time for
 - `init_U_bounds::Vector{Float32}`: Initial upper bounds on the node values of the DNN.
 - `init_L_bounds::Vector{Float32}`: Initial lower bounds on the node values of the DNN.
 - `verbose::Bool=false`: Controls Gurobi logs.
+- `tl::Float64=1.0`: Controls the time limit for solvign the subproblems 
 
 # Examples
 ```julia
-L_bounds, U_bounds = bound_tightening(DNN, init_U_bounds, init_L_bounds, false)
+L_bounds, U_bounds = bound_tightening(DNN, init_U_bounds, init_L_bounds, false, 1.0)
 ```
 """
 
-function bound_tightening(DNN::Chain, init_U_bounds::Vector{Float32}, init_L_bounds::Vector{Float32}, verbose::Bool=false)
+function bound_tightening(DNN::Chain, init_U_bounds::Vector{Float32}, init_L_bounds::Vector{Float32}, verbose::Bool=false, tl::Float64=1.0)
 
     K = length(DNN) # NOTE! there are K+1 layers in the nn
 
@@ -39,7 +40,7 @@ function bound_tightening(DNN::Chain, init_U_bounds::Vector{Float32}, init_L_bou
     curr_U_bounds = copy(init_U_bounds)
     curr_L_bounds = copy(init_L_bounds)
 
-    model = Model(optimizer_with_attributes(Gurobi.Optimizer, "OutputFlag" => (verbose ? 1 : 0)))
+    model = Model(optimizer_with_attributes(Gurobi.Optimizer, "OutputFlag" => (verbose ? 1 : 0), "TimeLimit" => tl))
 
     # keeps track of the current node index starting from layer 1 (out of 0:K)
     outer_index = node_count[1] + 1
@@ -150,7 +151,7 @@ function bound_tightening(DNN::Chain, init_U_bounds::Vector{Float32}, init_L_bou
 end
 
 """
-bound_tightening_threads(DNN::Chain, init_U_bounds::Vector{Float32}, init_L_bounds::Vector{Float32}, verbose::Bool=false)
+bound_tightening_threads(DNN::Chain, init_U_bounds::Vector{Float32}, init_L_bounds::Vector{Float32}, verbose::Bool=false, tl::float64=1)
 
 A multi-threaded (using Threads) implementation of optimal tightened constraint bounds L and U for for a trained DNN.
 Using these bounds with the create_JuMP_model function reduces solution time for optimization problems.
@@ -160,14 +161,15 @@ Using these bounds with the create_JuMP_model function reduces solution time for
 - `init_U_bounds::Vector{Float32}`: Initial upper bounds on the node values of the DNN.
 - `init_L_bounds::Vector{Float32}`: Initial lower bounds on the node values of the DNN.
 - `verbose::Bool=false`: Controls Gurobi logs.
+- `tl::Float64=1.0`: Controls the time limit for solvign the subproblems 
 
 # Examples
 ```julia
-L_bounds_threads, U_bounds_threads = bound_tightening_threads(DNN, init_U_bounds, init_L_bounds, false)
+L_bounds_threads, U_bounds_threads = bound_tightening_threads(DNN, init_U_bounds, init_L_bounds, false, 1.0)
 ```
 """
 
-function bound_tightening_threads(DNN::Chain, init_U_bounds::Vector{Float32}, init_L_bounds::Vector{Float32}, verbose::Bool=false)
+function bound_tightening_threads(DNN::Chain, init_U_bounds::Vector{Float32}, init_L_bounds::Vector{Float32}, verbose::Bool=false, tl::Float64=1.0)
 
     K = length(DNN) # NOTE! there are K+1 layers in the nn
 
@@ -192,7 +194,7 @@ function bound_tightening_threads(DNN::Chain, init_U_bounds::Vector{Float32}, in
 
             ### below variables and constraints in all problems
 
-            model = Model(optimizer_with_attributes(Gurobi.Optimizer, "OutputFlag" => (verbose ? 1 : 0)))
+            model = Model(optimizer_with_attributes(Gurobi.Optimizer, "OutputFlag" => (verbose ? 1 : 0), "TimeLimit" => tl))
 
             # keeps track of the current node index starting from layer 1 (out of 0:K)
             prev_layers_node_sum = 0
@@ -316,14 +318,15 @@ Using these bounds with the create_JuMP_model function reduces solution time for
 - `init_U_bounds::Vector{Float32}`: Initial upper bounds on the node values of the DNN.
 - `init_L_bounds::Vector{Float32}`: Initial lower bounds on the node values of the DNN.
 - `verbose::Bool=false`: Controls Gurobi logs.
+- `tl::Float64=1.0`: Controls the time limit for solvign the subproblems 
 
 # Examples
 ```julia
-L_bounds_workers, U_bounds_workers = bound_tightening_workers(DNN, init_U_bounds, init_L_bounds, false)
+L_bounds_workers, U_bounds_workers = bound_tightening_workers(DNN, init_U_bounds, init_L_bounds, false, 1.0)
 ```
 """
 
-function bound_tightening_workers(DNN::Chain, init_U_bounds::Vector{Float32}, init_L_bounds::Vector{Float32}, verbose::Bool=false)
+function bound_tightening_workers(DNN::Chain, init_U_bounds::Vector{Float32}, init_L_bounds::Vector{Float32}, verbose::Bool=false, tl::Float64=1.0)
 
     K = length(DNN) # NOTE! there are K+1 layers in the nn
 
@@ -343,7 +346,7 @@ function bound_tightening_workers(DNN::Chain, init_U_bounds::Vector{Float32}, in
     for k in 1:K
 
         # Distributed.pmap returns the bounds in order
-        L_U_bounds = Distributed.pmap(node -> bt_workers_inner(K, k, node, W, b, node_count, curr_U_bounds, curr_L_bounds, verbose), 1:(2*node_count[k+1]))
+        L_U_bounds = Distributed.pmap(node -> bt_workers_inner(K, k, node, W, b, node_count, curr_U_bounds, curr_L_bounds, verbose, tl), 1:(2*node_count[k+1]))
 
         for node in 1:node_count[k+1]
             prev_layers_node_sum = 0
@@ -383,10 +386,11 @@ function bt_workers_inner(
     node_count::Vector{Int64}, 
     curr_U_bounds::Vector{Float32}, 
     curr_L_bounds::Vector{Float32}, 
-    verbose::Bool
+    verbose::Bool,
+    tl::Float64
     )
 
-    model = Model(optimizer_with_attributes(Gurobi.Optimizer, "OutputFlag" => (verbose ? 1 : 0), "Threads" => 1))
+    model = Model(optimizer_with_attributes(Gurobi.Optimizer, "OutputFlag" => (verbose ? 1 : 0), "Threads" => 1, "TimeLimit" => tl))
 
     # keeps track of the current node index starting from layer 1 (out of 0:K)
     prev_layers_node_sum = 0
@@ -491,14 +495,15 @@ Using these bounds with the create_JuMP_model function reduces solution time for
 - `init_U_bounds::Vector{Float32}`: Initial upper bounds on the node values of the DNN.
 - `init_L_bounds::Vector{Float32}`: Initial lower bounds on the node values of the DNN.
 - `verbose::Bool=false`: Controls Gurobi logs.
+- `tl::Float64=1.0`: Controls the time limit for solvign the subproblems.
 
 # Examples
 ```julia
-L_bounds_workers, U_bounds_workers = bound_tightening_2workers(DNN, init_U_bounds, init_L_bounds, false)
+L_bounds_workers, U_bounds_workers = bound_tightening_2workers(DNN, init_U_bounds, init_L_bounds, false, 1.0)
 ```
 """
 
-function bound_tightening_2workers(DNN::Chain, init_U_bounds::Vector{Float32}, init_L_bounds::Vector{Float32}, verbose::Bool=false)
+function bound_tightening_2workers(DNN::Chain, init_U_bounds::Vector{Float32}, init_L_bounds::Vector{Float32}, verbose::Bool=false, tl::Float64=1.0)
 
     K = length(DNN) # NOTE! there are K+1 layers in the nn
 
@@ -522,7 +527,7 @@ function bound_tightening_2workers(DNN::Chain, init_U_bounds::Vector{Float32}, i
     for k in 1:K
 
         L_U_bounds = Distributed.pmap(obj_function -> 
-            bt_2workers_inner(K, k, obj_function, W, b, node_count, curr_U_bounds, curr_L_bounds, threads_split[obj_function], verbose), 1:2)
+            bt_2workers_inner(K, k, obj_function, W, b, node_count, curr_U_bounds, curr_L_bounds, threads_split[obj_function], verbose, tl), 1:2)
 
         curr_L_bounds = L_U_bounds[1]
         curr_U_bounds = L_U_bounds[2]
@@ -547,13 +552,14 @@ function bt_2workers_inner(
     curr_U_bounds::Vector{Float32}, 
     curr_L_bounds::Vector{Float32}, 
     n_threads::Int64,
-    verbose::Bool
+    verbose::Bool, 
+    tl::Float64
     )
 
     curr_U_bounds_copy = copy(curr_U_bounds)
     curr_L_bounds_copy = copy(curr_L_bounds)
 
-    model = Model(optimizer_with_attributes(Gurobi.Optimizer, "OutputFlag" => (verbose ? 1 : 0), "Threads" => n_threads))
+    model = Model(optimizer_with_attributes(Gurobi.Optimizer, "OutputFlag" => (verbose ? 1 : 0), "Threads" => n_threads, "TimeLimit" => tl))
 
     # NOTE! below variables and constraints for all opt problems
     @variable(model, x[k in 0:K, j in 1:node_count[k+1]] >= 0)
