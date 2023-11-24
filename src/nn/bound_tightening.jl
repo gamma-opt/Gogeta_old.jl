@@ -285,6 +285,7 @@ function bound_tightening_threads(DNN::Chain, init_U_bounds::Vector{Float32}, in
             @assert termination_status(model) == OPTIMAL || termination_status(model) == TIME_LIMIT
                 "Problem (layer $k (from 1:$K), node $curr_node, $(obj_function == 1 ? "L" : "U")-bound) is infeasible."
             
+            @show termination_status(model) 
             if termination_status(model) == OPTIMAL
                 optimal = objective_value(model)
             else 
