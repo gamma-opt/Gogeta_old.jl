@@ -284,17 +284,28 @@ function bound_tightening_threads(DNN::Chain, init_U_bounds::Vector{Float32}, in
             solve_time = round(solve_time; sigdigits = 3)
             @assert termination_status(model) == OPTIMAL || termination_status(model) == TIME_LIMIT
                 "Problem (layer $k (from 1:$K), node $curr_node, $(obj_function == 1 ? "L" : "U")-bound) is infeasible."
-            optimal = objective_value(model)
+            
+            if termination_status(model) == OPTIMAL
+                optimal = objective_value(model)
+            else 
+                optimal = Inf
+            end
+            
+
             println("Thread: $(Threads.threadid()), layer $k, node $curr_node, $(obj_function == 1 ? "L" : "U")-bound: solve time $(solve_time)s, optimal value $(optimal)")
 
             # fix the model variable L or U corresponding to the current node to be the optimal value
             Threads.lock(lock) do
-                if obj_function == 1 # Min
+                if obj_function == 1 && optimal != Inf # Min and we recieved a new bound 
+                    
                     curr_L_bounds[curr_node_index] = optimal
                     fix(L[k, curr_node], optimal)
-                elseif obj_function == 2 # Max
+                    
+                elseif obj_function == 2 && optimal != Inf # Max and we recieved a new bound
+
                     curr_U_bounds[curr_node_index] = optimal
                     fix(U[k, curr_node], optimal)
+
                 end
             end
             
